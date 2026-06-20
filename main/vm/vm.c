@@ -9,10 +9,10 @@
 
 static const char *TAG = "ESPRESSO_VM";
 
-void vm_run(Bytecode *bc) {
+VmResult vm_run(Bytecode *bc) {
   if (!bc || !bc->code) {
     ESP_LOGE(TAG, "Invalid bytecode");
-    return;
+    return VM_ERROR;
   }
 
   ESP_LOGI(TAG, "VM start: instructions=%d", bc->len);
@@ -42,13 +42,14 @@ void vm_run(Bytecode *bc) {
 
     case OP_HALT:
       ESP_LOGI(TAG, "HALT");
-      return;
+      return VM_HALTED;
 
     default:
       ESP_LOGE(TAG, "Unknown opcode: %d", ins.op);
-      return;
+      return VM_ERROR;
     }
   }
 
   ESP_LOGI(TAG, "VM finished");
+  return VM_OK;
 }

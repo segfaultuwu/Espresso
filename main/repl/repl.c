@@ -19,53 +19,45 @@
 
 static const char *TAG = "REPL";
 
-static void repl_task(void *arg) {
-  uint8_t data[BUF_SIZE];
-  char line[512];
-  int idx = 0;
+static void repl_task(void *arg)
+{
+    uint8_t c;
+    uint8_t data[1];
+    char line[256];
+    int idx = 0;
 
-  ESP_LOGI(TAG, "REPL started");
+    ESP_LOGI(TAG, "REPL started");
 
-  while (1) {
-    int len = uart_read_bytes(UART_PORT, data, 1, pdMS_TO_TICKS(50));
+    uart_write_bytes(UART_PORT, "\n> ", 3);
 
-    if (len > 0) {
-      char c = (char)data[0];
+    while (1) {
+        uart_write_bytes(UART_PORT, "> ", 2);
 
-      // echo
-      uart_write_bytes(UART_PORT, &c, 1);
+        int len = uart_read_bytes(UART_PORT, data, 1, portMAX_DELAY);
 
-      if (c == '\r')
-        continue;
+        if (len <= 0) continue;
 
-      if (c == 0x7f || c == 0x08) {
-        if (idx > 0)
-          idx--;
-        continue;
-      }
+        char c = (char)data[0];
+        uart_write_bytes(UART_PORT, &c, 1);
 
-      if (c == '\n') {
-        line[idx] = '\0';
+        if (c == '\r') continue;
 
-        if (idx > 0) {
-          ESP_LOGI(TAG, "RUN: %s", line);
+        if (c == '\n') {
+            line[idx] = '\0';
 
-          Bytecode bc = compile_source(line);
+            if (idx > 0) {
+                ESP_LOGI(TAG, "RUN: %s", line);
 
-          if (bc.code == NULL || bc.len == 0) {
-            ESP_LOGW(TAG, "compile failed");
-            continue;
-          }
-          vm_run(&bc);
-          free_bytecode(bc);
+                Bytecode bc = compile_source(line);
+                vm_run(&bc);
+            }
+
+            idx = 0;
         }
-
-        idx = 0;
-      } else if (idx < (int)sizeof(line) - 1) {
-        line[idx++] = c;
-      }
+        else if (idx < sizeof(line) - 1) {
+            line[idx++] = c;
+        }
     }
-  }
 }
 
 void repl_init(void) {
