@@ -1,5 +1,6 @@
 <div align="center">
-    <img src="./assets/espresso.png" alt="Espresso logo" width="200">
+<img src="./assets/espresso.png" alt="Espresso logo" width="200">
+
 # ☕ Espresso
 
 A tiny embedded scripting language + bytecode VM for ESP32
