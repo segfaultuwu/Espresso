@@ -39,37 +39,38 @@ static void run_line(const char *line) {
 }
 
 static void repl_task(void *arg) {
-    char line[128];
-    int pos = 0;
-    uint8_t c;
+  char line[128];
+  int pos = 0;
+  uint8_t c;
 
-    uart_write_bytes(UART_PORT, "\r\n> ", 4);
+  uart_write_bytes(UART_PORT, "\r\n> ", 4);
 
-    while (1) {
-        int len = uart_read_bytes(UART_PORT, &c, 1, portMAX_DELAY);
+  while (1) {
+    int len = uart_read_bytes(UART_PORT, &c, 1, portMAX_DELAY);
 
-        if (len <= 0) continue;
+    if (len <= 0)
+      continue;
 
-        uart_write_bytes(UART_PORT, (char*)&c, 1);
+    uart_write_bytes(UART_PORT, (char *)&c, 1);
 
-        if (c == '\r' || c == '\n') {
-            if (pos > 0) {
-                line[pos] = 0;
-                uart_write_bytes(UART_PORT, "\r\n", 2);
-                run_line(line);
-                pos = 0;
-                uart_write_bytes(UART_PORT, "> ", 2);
-            } else if (c == '\r') {
-                uart_write_bytes(UART_PORT, "\r\n> ", 4);
-            } else if (c == '\n') {
-                // Ignore '\n' if we just processed '\r' or if it's an empty line
-            }
-            continue;
-        }
-
-        if (pos < sizeof(line) - 1)
-            line[pos++] = c;
+    if (c == '\r' || c == '\n') {
+      if (pos > 0) {
+        line[pos] = 0;
+        uart_write_bytes(UART_PORT, "\r\n", 2);
+        run_line(line);
+        pos = 0;
+        uart_write_bytes(UART_PORT, "> ", 2);
+      } else if (c == '\r') {
+        uart_write_bytes(UART_PORT, "\r\n> ", 4);
+      } else if (c == '\n') {
+        // Ignore '\n' if we just processed '\r' or if it's an empty line
+      }
+      continue;
     }
+
+    if (pos < sizeof(line) - 1)
+      line[pos++] = c;
+  }
 }
 
 void repl_init(void) {

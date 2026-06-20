@@ -17,10 +17,16 @@ A tiny embedded scripting language + bytecode VM for ESP32
 ## Example
 
 ```ruby
+def blink
+    gpio 2 1
+    sleep delay
+    gpio 2 0
+    sleep delay
+end
+
+delay = 500
+
 while 1==1
-    gpio(2,1)
-    sleep(1000)
-    gpio(2,0)
-    sleep(1000)
+    blink
 end
 ```

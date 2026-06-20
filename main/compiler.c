@@ -3,6 +3,7 @@
 
 #include "esp_log.h"
 #include "espresso/compiler.h"
+#include "espresso/vm.h"
 #include "espresso/vm/types.h"
 
 #define MAX_INSTR 512
@@ -78,7 +79,7 @@ static Value parse_val(const char **s) {
 }
 
 typedef struct {
-    int type; // 1=if, 2=while, 3=for
+    int type; // 1=if, 2=while, 3=for, 4=def
     int start_ip;
     int jmp_ip;
     int for_var;
@@ -94,6 +95,14 @@ Bytecode compile_source(const char *src) {
 
   Block block_stack[16];
   int block_depth = 0;
+  int func_count = 0;
+  char func_names[MAX_VARS][32];
+  int func_ips[MAX_VARS];
+  int unresolved_count = 0;
+  struct {
+      char name[32];
+      int instr_idx;
+  } unresolved_calls[MAX_VARS];
 
   char *line = strtok(buffer, "\n");
 
@@ -118,10 +127,42 @@ Bytecode compile_source(const char *src) {
                 bc.code[b.jmp_ip].target = bc.len;
             } else if (b.type == 1) { // if
                 bc.code[b.jmp_ip].target = bc.len;
+            } else if (b.type == 4) { // def
+                bc.code[bc.len++] = (Instr){.op = OP_RET, .target = b.jmp_ip};
+                bc.code[b.jmp_ip].target = bc.len;
             }
         } else {
             ESP_LOGE("COMPILER", "Unexpected 'end'");
         }
+        line = strtok(NULL, "\n");
+        continue;
+    }
+
+    if (strncmp(p, "def ", 4) == 0) {
+        p += 4;
+        while (isspace((unsigned char)*p)) p++;
+        char fname[32] = {0};
+        int i = 0;
+
+        while ((isalnum((unsigned char)*p) || *p == '_') && i < 31) {
+            fname[i++] = *p++;
+        }
+        fname[i] = '\0';
+
+        // Emit the placeholder jump FIRST, so that func_ips can point to the
+        // instruction right after it (the real start of the function body),
+        // not to the jump instruction itself.
+        int jmp_ip = bc.len;
+        bc.code[bc.len++] = (Instr){.op = OP_JMP, .target = 0};
+
+        if (func_count < MAX_VARS) {
+            strncpy(func_names[func_count], fname, 31);
+            func_ips[func_count] = bc.len; // points past the OP_JMP, into the function body
+            func_count++;
+        }
+
+        block_stack[block_depth++] = (Block){.type = 4, .start_ip = 0, .jmp_ip = jmp_ip};
+
         line = strtok(NULL, "\n");
         continue;
     }
@@ -169,7 +210,6 @@ Bytecode compile_source(const char *src) {
 
     char op[32] = {0};
     int i = 0;
-    char *cmd_start = p;
     while (*p && !isspace((unsigned char)*p) && *p != '=' && *p != '(' && i < 31) {
         op[i++] = *p++;
     }
@@ -202,11 +242,40 @@ Bytecode compile_source(const char *src) {
             Value b = parse_val((const char**)&p);
             bc.code[bc.len++] = (Instr){.op = opcode, .a = a, .b = b};
         } else {
-            ESP_LOGE("COMPILER", "Unknown command: %s", op);
+            int is_func = 0;
+            for (int j = 0; j < func_count; j++) {
+                if (strcmp(op, func_names[j]) == 0) {
+                    bc.code[bc.len++] = (Instr){.op = OP_CALL, .target = func_ips[j]};
+                    is_func = 1;
+                    break;
+                }
+            }
+            if (!is_func && op[0] != '\0') {
+                if (unresolved_count < MAX_VARS) {
+                    strncpy(unresolved_calls[unresolved_count].name, op, 31);
+                    unresolved_calls[unresolved_count].instr_idx = bc.len;
+                    unresolved_count++;
+                    bc.code[bc.len++] = (Instr){.op = OP_CALL, .target = 0};
+                } else {
+                    ESP_LOGE("COMPILER", "Unknown command: %s", op);
+                }
+            }
         }
     }
 
     line = strtok(NULL, "\n");
+  }
+
+  for (int i = 0; i < unresolved_count; i++) {
+      int found = 0;
+      for (int j = 0; j < func_count; j++) {
+          if (strcmp(unresolved_calls[i].name, func_names[j]) == 0) {
+              bc.code[unresolved_calls[i].instr_idx].target = func_ips[j];
+              found = 1;
+              break;
+          }
+      }
+      if (!found) ESP_LOGE("COMPILER", "Unresolved function: %s", unresolved_calls[i].name);
   }
 
   return bc;

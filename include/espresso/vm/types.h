@@ -13,7 +13,10 @@ typedef enum {
   OP_JMP_FALSE,
   OP_INVALID,
   OP_POP,
-  OP_PUSH
+  OP_PUSH,
+  OP_CALL,
+  OP_RET,
+  OP_DEF
 } OpCode;
 
 typedef enum {

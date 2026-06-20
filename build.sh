@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-echo "== Espresso ESP32 setup =="
+echo "== Espresso ESP32 Build script =="
 
 . ./esp-idf/export.sh
 
