@@ -9,10 +9,15 @@
 #define MAX_INSTR 512
 #define MAX_VARS 64
 
+/* Global variable table (top-level scope, shared by all functions). */
 static char var_names[MAX_VARS][32];
 static int var_count = 0;
 
-static int get_or_create_var(const char *name) {
+static char local_names[MAX_LOCALS][32];
+static int local_count = 0;
+static int in_function = 0; /* 0 = compiling top-level code, 1 = inside a def body */
+
+static int get_or_create_global(const char *name) {
     for (int i = 0; i < var_count; i++) {
         if (strcmp(var_names[i], name) == 0) return i;
     }
@@ -22,6 +27,41 @@ static int get_or_create_var(const char *name) {
         return var_count++;
     }
     return -1;
+}
+
+static int find_local(const char *name) {
+    if (!in_function) return -1;
+    for (int i = 0; i < local_count; i++) {
+        if (strcmp(local_names[i], name) == 0) return i;
+    }
+    return -1;
+}
+
+static Value resolve_read(const char *name) {
+    int local_idx = find_local(name);
+    if (local_idx >= 0) {
+        return (Value){VAL_LOCAL, local_idx};
+    }
+    int global_idx = get_or_create_global(name);
+    return (Value){VAL_VAR, global_idx};
+}
+
+static Value resolve_assign_target(const char *name) {
+    if (in_function) {
+        int local_idx = find_local(name);
+        if (local_idx >= 0) {
+            return (Value){VAL_LOCAL, local_idx};
+        }
+        if (local_count < MAX_LOCALS) {
+            strncpy(local_names[local_count], name, 31);
+            local_names[local_count][31] = '\0';
+            return (Value){VAL_LOCAL, local_count++};
+        }
+        ESP_LOGE("COMPILER", "Too many locals in function (max %d)", MAX_LOCALS);
+        /* Fall through to global as a last resort rather than losing the write. */
+    }
+    int global_idx = get_or_create_global(name);
+    return (Value){VAL_VAR, global_idx};
 }
 
 static OpCode parse_opcode(const char *op) {
@@ -62,8 +102,7 @@ static Value parse_val(const char **s) {
             (*s)++;
         }
         name[i] = '\0';
-        int var_idx = get_or_create_var(name);
-        return (Value){VAL_VAR, var_idx};
+        return resolve_read(name);
     }
     if (isdigit((unsigned char)**s) || **s == '-') {
         int val = 0;
@@ -82,12 +121,18 @@ typedef struct {
     int type; // 1=if, 2=while, 3=for, 4=def
     int start_ip;
     int jmp_ip;
-    int for_var;
+    int for_var; /* for 'for' loops: the loop variable's Value (re-encoded below) */
+    Value for_var_val;
 } Block;
 
 Bytecode compile_source(const char *src) {
   static Instr code[MAX_INSTR];
   Bytecode bc = {.code = code, .len = 0};
+
+  /* Reset all compiler state so repeated calls (e.g. from a REPL) start clean. */
+  var_count = 0;
+  local_count = 0;
+  in_function = 0;
 
   char buffer[1024];
   strncpy(buffer, src, sizeof(buffer) - 1);
@@ -98,6 +143,7 @@ Bytecode compile_source(const char *src) {
   int func_count = 0;
   char func_names[MAX_VARS][32];
   int func_ips[MAX_VARS];
+  int func_arity[MAX_VARS];
   int unresolved_count = 0;
   struct {
       char name[32];
@@ -122,7 +168,7 @@ Bytecode compile_source(const char *src) {
                 bc.code[bc.len++] = (Instr){.op = OP_JMP, .target = b.start_ip};
                 bc.code[b.jmp_ip].target = bc.len;
             } else if (b.type == 3) { // for
-                bc.code[bc.len++] = (Instr){.op = OP_MATH, .subop = MATH_ADD, .dest = {VAL_VAR, b.for_var}, .a = {VAL_VAR, b.for_var}, .b = {VAL_CONST, 1}};
+                bc.code[bc.len++] = (Instr){.op = OP_MATH, .subop = MATH_ADD, .dest = b.for_var_val, .a = b.for_var_val, .b = {VAL_CONST, 1}};
                 bc.code[bc.len++] = (Instr){.op = OP_JMP, .target = b.start_ip};
                 bc.code[b.jmp_ip].target = bc.len;
             } else if (b.type == 1) { // if
@@ -130,6 +176,9 @@ Bytecode compile_source(const char *src) {
             } else if (b.type == 4) { // def
                 bc.code[bc.len++] = (Instr){.op = OP_RET, .target = b.jmp_ip};
                 bc.code[b.jmp_ip].target = bc.len;
+                /* Leaving the function body: locals go out of scope. */
+                in_function = 0;
+                local_count = 0;
             }
         } else {
             ESP_LOGE("COMPILER", "Unexpected 'end'");
@@ -149,15 +198,42 @@ Bytecode compile_source(const char *src) {
         }
         fname[i] = '\0';
 
-        // Emit the placeholder jump FIRST, so that func_ips can point to the
-        // instruction right after it (the real start of the function body),
-        // not to the jump instruction itself.
+        /* Parse the optional parameter list: def name(arg1, arg2) */
+        local_count = 0;
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '(') {
+            p++;
+            while (1) {
+                while (isspace((unsigned char)*p)) p++;
+                if (*p == ')' || *p == '\0') break;
+                char pname[32] = {0};
+                int j = 0;
+                while ((isalnum((unsigned char)*p) || *p == '_') && j < 31) {
+                    pname[j++] = *p++;
+                }
+                pname[j] = '\0';
+                if (j > 0 && local_count < MAX_LOCALS) {
+                    strncpy(local_names[local_count], pname, 31);
+                    local_names[local_count][31] = '\0';
+                    local_count++;
+                }
+                while (isspace((unsigned char)*p)) p++;
+                if (*p == ',') { p++; continue; }
+                break;
+            }
+            if (*p == ')') p++;
+        }
+        in_function = 1;
+
+        /* Emit the placeholder jump FIRST, so func_ips points past it, at
+         * the function body's real first instruction (not at the jump). */
         int jmp_ip = bc.len;
         bc.code[bc.len++] = (Instr){.op = OP_JMP, .target = 0};
 
         if (func_count < MAX_VARS) {
             strncpy(func_names[func_count], fname, 31);
-            func_ips[func_count] = bc.len; // points past the OP_JMP, into the function body
+            func_ips[func_count] = bc.len;
+            func_arity[func_count] = local_count;
             func_count++;
         }
 
@@ -191,7 +267,14 @@ Bytecode compile_source(const char *src) {
 
     if (strncmp(p, "for ", 4) == 0) {
         p += 4;
-        Value var = parse_val((const char**)&p);
+        while (isspace((unsigned char)*p)) p++;
+        char varname[32] = {0};
+        int vi = 0;
+        while ((isalnum((unsigned char)*p) || *p == '_') && vi < 31) {
+            varname[vi++] = *p++;
+        }
+        varname[vi] = '\0';
+        Value var = resolve_assign_target(varname);
         while(isspace((unsigned char)*p)) p++;
         if (*p == '=') p++;
         Value start_val = parse_val((const char**)&p);
@@ -203,7 +286,7 @@ Bytecode compile_source(const char *src) {
         int start_ip = bc.len;
         int jmp_ip = bc.len;
         bc.code[bc.len++] = (Instr){.op = OP_JMP_FALSE, .subop = COND_LE, .a = var, .b = end_val};
-        block_stack[block_depth++] = (Block){.type = 3, .start_ip = start_ip, .jmp_ip = jmp_ip, .for_var = var.value};
+        block_stack[block_depth++] = (Block){.type = 3, .start_ip = start_ip, .jmp_ip = jmp_ip, .for_var_val = var};
         line = strtok(NULL, "\n");
         continue;
     }
@@ -222,14 +305,12 @@ Bytecode compile_source(const char *src) {
         int m_op = parse_math((const char**)&p);
 
         if (isalpha((unsigned char)op[0])) {
-            int var_idx = get_or_create_var(op);
-            if (var_idx >= 0) {
-                if (m_op != -1) {
-                    Value val2 = parse_val((const char**)&p);
-                    bc.code[bc.len++] = (Instr){.op = OP_MATH, .subop = m_op, .dest = {VAL_VAR, var_idx}, .a = val1, .b = val2};
-                } else {
-                    bc.code[bc.len++] = (Instr){.op = OP_SET_VAR, .dest = {VAL_VAR, var_idx}, .a = val1};
-                }
+            Value dest = resolve_assign_target(op);
+            if (m_op != -1) {
+                Value val2 = parse_val((const char**)&p);
+                bc.code[bc.len++] = (Instr){.op = OP_MATH, .subop = m_op, .dest = dest, .a = val1, .b = val2};
+            } else {
+                bc.code[bc.len++] = (Instr){.op = OP_SET_VAR, .dest = dest, .a = val1};
             }
         }
     } else {
@@ -242,10 +323,31 @@ Bytecode compile_source(const char *src) {
             Value b = parse_val((const char**)&p);
             bc.code[bc.len++] = (Instr){.op = opcode, .a = a, .b = b};
         } else {
+            /* Possibly a user function call: name(arg1, arg2, ...) */
+            Instr call_ins = {.op = OP_CALL, .target = 0, .arg_count = 0};
+
+            while (isspace((unsigned char)*p)) p++;
+            if (*p == '(') {
+                p++;
+                while (1) {
+                    while (isspace((unsigned char)*p)) p++;
+                    if (*p == ')' || *p == '\0') break;
+                    Value arg = parse_val((const char**)&p);
+                    if (call_ins.arg_count < MAX_CALL_ARGS) {
+                        call_ins.args[call_ins.arg_count++] = arg;
+                    }
+                    while (isspace((unsigned char)*p)) p++;
+                    if (*p == ',') { p++; continue; }
+                    break;
+                }
+                if (*p == ')') p++;
+            }
+
             int is_func = 0;
             for (int j = 0; j < func_count; j++) {
                 if (strcmp(op, func_names[j]) == 0) {
-                    bc.code[bc.len++] = (Instr){.op = OP_CALL, .target = func_ips[j]};
+                    call_ins.target = func_ips[j];
+                    bc.code[bc.len++] = call_ins;
                     is_func = 1;
                     break;
                 }
@@ -255,7 +357,7 @@ Bytecode compile_source(const char *src) {
                     strncpy(unresolved_calls[unresolved_count].name, op, 31);
                     unresolved_calls[unresolved_count].instr_idx = bc.len;
                     unresolved_count++;
-                    bc.code[bc.len++] = (Instr){.op = OP_CALL, .target = 0};
+                    bc.code[bc.len++] = call_ins; /* target patched below once known */
                 } else {
                     ESP_LOGE("COMPILER", "Unknown command: %s", op);
                 }

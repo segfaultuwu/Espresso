@@ -2,6 +2,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define MAX_CALL_DEPTH 16
+#define MAX_LOCALS 16
+#define MAX_CALL_ARGS 8
+
 typedef enum {
   OP_GPIO_WRITE,
   OP_SLEEP,
@@ -37,7 +41,8 @@ typedef enum {
 
 typedef enum {
     VAL_CONST,
-    VAL_VAR,
+    VAL_VAR,    // global variable, indexed into vm_vars[]
+    VAL_LOCAL,  // local variable/parameter, indexed into the current call frame
     VAL_NONE
 } ValType;
 
@@ -53,6 +58,8 @@ typedef struct {
     Value dest;
     Value a;
     Value b;
+    Value args[MAX_CALL_ARGS];
+    int arg_count;
 } Instr;
 
 typedef struct {
