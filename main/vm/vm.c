@@ -1,55 +1,31 @@
-#include "espresso/vm.h"
-#include "espresso/vm/bytecode.h"
-
+#include "esp_log.h"
 #include "espresso/hal/gpio.h"
 #include "espresso/hal/sleep.h"
-
-#include "esp_log.h"
+#include "espresso/vm/bytecode.h"
 #include "espresso/vm/types.h"
-
-static const char *TAG = "ESPRESSO_VM";
+#include <stdio.h>
 
 VmResult vm_run(Bytecode *bc) {
-  if (!bc || !bc->code) {
-    ESP_LOGE(TAG, "Invalid bytecode");
-    return VM_ERROR;
-  }
-
-  ESP_LOGI(TAG, "VM start: instructions=%d", bc->len);
-
-  for (int i = 0; i < bc->len; i++) {
-    Instr ins = bc->code[i];
-
-    switch ((OpCode)ins.op) {
+  for (int ip = 0; ip < bc->len; ip++) {
+    Instr ins = bc->code[ip];
+    ESP_LOGI("VM", "EXEC OP=%d a=%d b=%d", ins.op, ins.a, ins.b);
+    switch (ins.op) {
 
     case OP_GPIO_WRITE:
-      ESP_LOGI(TAG, "GPIO_WRITE pin=%d value=%d", ins.a, ins.b);
       hal_gpio_write(ins.a, ins.b);
       break;
 
     case OP_SLEEP:
-      ESP_LOGI(TAG, "SLEEP %d ms", ins.a);
       hal_sleep(ins.a);
       break;
 
-    case OP_PUSH:
-      ESP_LOGW(TAG, "OP_PUSH not implemented yet");
-      break;
-
-    case OP_POP:
-      ESP_LOGW(TAG, "OP_POP not implemented yet");
-      break;
-
     case OP_HALT:
-      ESP_LOGI(TAG, "HALT");
-      return VM_HALTED;
+      return VmResult_Ok;
 
     default:
-      ESP_LOGE(TAG, "Unknown opcode: %d", ins.op);
-      return VM_ERROR;
+      return VmResult_Error;
     }
   }
 
-  ESP_LOGI(TAG, "VM finished");
-  return VM_OK;
+  return VmResult_Ok;
 }

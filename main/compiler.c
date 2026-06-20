@@ -3,13 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_log.h"
 #include "espresso/compiler.h"
 #include "espresso/vm/types.h"
 
 #define MAX_INSTR 128
-#define MAX_LINE 128
-
-static int parse_int(const char *s) { return atoi(s); }
 
 static OpCode parse_opcode(const char *op) {
   if (strcmp(op, "gpio") == 0)
@@ -19,7 +17,7 @@ static OpCode parse_opcode(const char *op) {
   if (strcmp(op, "halt") == 0)
     return OP_HALT;
 
-  return OP_HALT; // fallback
+  return OP_INVALID;
 }
 
 Bytecode compile_source(const char *src) {
@@ -35,24 +33,42 @@ Bytecode compile_source(const char *src) {
 
   while (line && bc.len < MAX_INSTR) {
 
-    // skip empty lines
-    while (isspace(*line))
+    while (isspace((unsigned char)*line))
       line++;
+
     if (*line == '\0') {
       line = strtok(NULL, "\n");
       continue;
     }
 
-    char op[32];
+    char op[32] = {0};
     int a = 0, b = 0;
 
-    int args = sscanf(line, "%31s %d %d", op, &a, &b);
+    int args = sscanf(line, "%31[^ (](%d,%d)", op, &a, &b);
+
+    if (args < 1) {
+      args = sscanf(line, "%31s %d %d", op, &a, &b);
+    }
 
     OpCode opcode = parse_opcode(op);
 
-    Instr ins = {.op = opcode, .a = a, .b = b};
+    ESP_LOGI("COMPILER", "OP='%s' A=%d B=%d", op, a, b);
+
+    if (opcode == OP_INVALID) {
+      ESP_LOGE("COMPILER", "Unknown command: %s", op);
+      line = strtok(NULL, "\n");
+      continue;
+    }
+
+    Instr ins = {
+        .op = opcode,
+        .a = a,
+        .b = b,
+    };
 
     bc.code[bc.len++] = ins;
+
+    ESP_LOGI("COMPILER", "compiled: op=%d a=%d b=%d", opcode, a, b);
 
     line = strtok(NULL, "\n");
   }

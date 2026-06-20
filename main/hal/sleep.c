@@ -1,5 +1,5 @@
 #include "freertos/FreeRTOS.h"
+#include "freertos/projdefs.h"
 #include "freertos/task.h"
-#include "portmacro.h"
 
-void hal_sleep(int ms) { vTaskDelay(ms / portTICK_PERIOD_MS); }
+void hal_sleep(int ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }

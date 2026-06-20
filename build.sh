@@ -25,8 +25,8 @@ echo "[INFO] Sourcing ESP-IDF export.sh..."
 . "$IDF_PATH/export.sh"
 
 # 3. set target
-echo "[INFO] Setting target to esp32..."
-idf.py set-target esp32
+# echo "[INFO] Setting target to esp32..."
+# idf.py set-target esp32
 
 # 4. build
 echo "[INFO] Building project..."

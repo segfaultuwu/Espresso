@@ -1,3 +1,4 @@
+#include "driver/uart.h"
 #include "esp_log.h"
 #include "espresso/repl.h"
 
