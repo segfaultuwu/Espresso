@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-
-add_compile_options(-O2 -Wall -Wextra)
-
 project(espresso)

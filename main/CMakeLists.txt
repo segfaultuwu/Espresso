@@ -1,12 +1,15 @@
 idf_component_register(
     SRCS
         "main.c"
+        "compiler.c"
         "vm/vm.c"
         "vm/bytecode.c"
         "hal/gpio.c"
         "hal/sleep.c"
+        "repl/repl.c"
     INCLUDE_DIRS
         "."
-        "vm"
-        "hal"
+        "../include"
 )
+
+target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu17)

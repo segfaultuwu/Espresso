@@ -24,14 +24,13 @@ echo "[OK] IDF_PATH = $IDF_PATH"
 echo "[INFO] Sourcing ESP-IDF export.sh..."
 . "$IDF_PATH/export.sh"
 
-# Skip this
 # 3. set target
-# echo "[INFO] Setting target to esp32..."
-# idf.py set-target esp32
+echo "[INFO] Setting target to esp32..."
+idf.py set-target esp32
 
 # 4. build
 echo "[INFO] Building project..."
-idf.py build
+idf.py -DCMAKE_EXPORT_COMPILE_COMMANDS=ON build
 
 echo "== Build finished =="
 

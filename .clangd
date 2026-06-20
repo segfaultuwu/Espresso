@@ -1,0 +1,33 @@
+CompileFlags:
+  Add:
+    - -Iinclude
+    - -I$IDF_PATH/components
+    - -I$IDF_PATH/components/esp_common/include
+    - -I$IDF_PATH/components/freertos/include
+    - -I$IDF_PATH/components/log/include
+    - -std=gnu17
+
+  # tf is this shit
+  Remove:
+    - -fno-rtti
+    - -fno-exceptions
+    - -mlongcalls
+    - -fno-malloc-dce
+    - -fno-shrink-wrap
+    - -fno-tree-switch-conversion
+    - -fstrict-volatile-bitfields
+    - -fzero-init-padding-bits=all
+
+Index:
+  Background: true
+  StandardLibrary: true
+
+Diagnostics:
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
+
+Hover:
+  ShowAKA: true
+
+InlayHints:
+  Enabled: true

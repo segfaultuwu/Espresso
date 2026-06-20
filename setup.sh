@@ -30,7 +30,11 @@ idf.py set-target esp32
 
 # 4. build
 echo "[INFO] Building project..."
-idf.py build
+idf.py -DCMAKE_EXPORT_COMPILE_COMMANDS=ON build
+
+# 5. link compile_commands.json
+echp "[INFO] Linking build/compile_commands.json to ."
+ln -sf build/compile_commands.json .
 
 echo "== Build finished =="
 
