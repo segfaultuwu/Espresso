@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "vm/vm.c"
+        "vm/bytecode.c"
+        "hal/gpio.c"
+        "hal/sleep.c"
+    INCLUDE_DIRS
+        "."
+        "vm"
+        "hal"
+)
